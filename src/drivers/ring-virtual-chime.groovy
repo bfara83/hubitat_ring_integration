@@ -16,7 +16,6 @@
  */
 
 // @todo Consider using /ringtones
-// @todo Consider being able to set do_not_disturb
 
 import groovy.transform.Field
 
@@ -79,7 +78,8 @@ void refresh() {
   parent.apiRequestDeviceRefresh(device.deviceNetworkId)
   parent.apiRequestDeviceHealth(device.deviceNetworkId, "chimes")
 
-  parent.apiRequestDeviceGet(device.deviceNetworkId, "chimes", "linked_doorbots")
+  // @todo This isn't quite working yet
+  // parent.apiRequestDeviceGet(device.deviceNetworkId, "chimes", "linked_doorbots")
 }
 
 void beep() { playMotion() }

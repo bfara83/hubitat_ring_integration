@@ -14,6 +14,8 @@
  *  for the specific language governing permissions and limitations under the License.
  */
 
+import com.hubitat.app.ChildDeviceWrapper
+
 metadata {
   definition(name: "Ring Virtual Beams Group", namespace: "ring-hubitat-codahq", author: "Ben Rimmasch") {
     capability "Battery"
@@ -72,7 +74,7 @@ void setValues(final Map deviceInfo) {
   if (deviceInfo.groupMembers) {
     Map members = [:]
     for (final String groupMemeber in deviceInfo.groupMembers) {
-      def d = parent.getChildByZID(groupMemeber)
+      ChildDeviceWrapper d = parent.getChildByZID(groupMemeber)
       if (d) {
         members[d.deviceNetworkId] = d.label
       } else {

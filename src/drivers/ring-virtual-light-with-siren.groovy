@@ -222,10 +222,6 @@ void handleRefresh(final Map msg) {
     }
   }
 
-  if (msg.is_sidewalk_gateway && msg.sidewalk_connection) {
-    log.warn("Your device is being used as an Amazon sidewalk device.")
-  }
-
   if (msg.health) {
     Map health = msg.health
 
@@ -235,6 +231,12 @@ void handleRefresh(final Map msg) {
 
     if (health.rssi) {
       checkChanged("rssi", health.rssi)
+    }
+
+    // Per Ring: is_sidewalk_gateway indicates only whether a device *can* be used as a Sidewalk gateway. sidewalk_connection
+    // indicates whether Sidewalk is enabled in the Ring account. Both must be true for Sidewalk to be enabled on a device
+    if (msg.is_sidewalk_gateway && health.sidewalk_connection) {
+      log.warn("Your device is being used as an Amazon sidewalk device.")
     }
   }
 }
