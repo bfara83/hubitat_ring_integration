@@ -619,6 +619,9 @@ void parse(String description) {
       else if (datatype == null && jsonMsg.context?.uiConnection != null) {
         logDebug "Ignoring a message.DeviceInfoDocGetList with no datatype that has the context.uiConnection key"
       }
+      else if (datatype == null && !jsonMsg.containsKey('body') && jsonMsg.status == -66) {
+        logDebug "Ignoring a message.DeviceInfoDocGetList with no datatype and no body with a status of -66"
+      }
       else {
         unsupportedDatatypeReceived = true
       }
