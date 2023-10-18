@@ -369,10 +369,12 @@ Click the buttons below to opt device in or out of snapshot polling\n\n""")
           paragraph '<h4>' + makeChildDeviceLink(child) + " (Opted <b>${optedIn ? 'in to' : 'out of'}</b> snapshot polling)</h4>", width: 8
           if (optedIn) {
             input "optOut-${child.deviceNetworkId}", "button", title: "Opt out", width: 4, newLineAfter: true
-          } else {
+          }
+          else {
             input "optIn-${child.deviceNetworkId}", "button", title: "Opt in", width: 4, newLineAfter: true
           }
-        } else {
+        }
+        else {
           paragraph("Error getting child for ring id '$dni'")
         }
       }
@@ -1809,7 +1811,9 @@ String getRingDeviceId(String id) {
   "doorbell_scallop_lite",
   "doorbell_oyster",
   "cocoa_doorbell",
+  "cocoa_doorbell_v2",
   "cocoa_floodlight",
+  "cocoa_spotlight",
   "lpd_v1",
   "lpd_v2",
   "lpd_v3",
@@ -1825,9 +1829,9 @@ String getRingDeviceId(String id) {
   "hp_cam_v1",
   "hp_cam_v2",
   "spotlightw_v2",
-  "stickup_cam_longfin",
   "stickup_cam_wired",
   "stickup_cam_elite",
+  "stickup_cam_longfin",
   "stickup_cam_lunar",
   "stickup_cam_mini",
   "stickup_cam_v3",
@@ -1841,12 +1845,14 @@ String getRingDeviceId(String id) {
   "beams_bridge_v1": [name: "Ring Bridge Hub", driver: "SHOULD NOT SEE THIS"],
   "chime_pro_v2": [name: "Ring Chime Pro (v2)", driver: "Ring Virtual Chime"],
   "chime_pro": [name: "Ring Chime Pro", driver: "Ring Virtual Chime"],
-  "chime_v3": [name: "Ring Chime V3", driver: "Ring Virtual Chime"],
-  "chime_v2": [name: "Ring Chime V2", driver: "Ring Virtual Chime"],
   "chime": [name: "Ring Chime", driver: "Ring Virtual Chime"],
+  "chime_v2": [name: "Ring Chime V2", driver: "Ring Virtual Chime"],
+  "chime_v3": [name: "Ring Chime V3", driver: "Ring Virtual Chime"],
   "cocoa_camera": [name: "Ring Stick Up Cam", driver: "Ring Virtual Camera with Siren"],
   "cocoa_doorbell": [name: "Ring Video Doorbell 2020", driver: "Ring Virtual Camera"],
+  "cocoa_doorbell_v2": [name: "Ring Video Doorbell 2023", driver: "Ring Virtual Camera"],
   "cocoa_floodlight": [name: "Ring Floodlight Cam Wired Plus", driver: "Ring Virtual Light with Siren"],
+  "cocoa_spotlight": [name: "Ring Spotlight Cam Plus", driver: "Ring Virtual Light with Siren"],
   "doorbell_graham_cracker": [name: "Ring Video Doorbell Wired", driver: "Ring Virtual Camera"],
   "doorbell_portal": [name: "Ring Peephole Cam", driver: "Ring Virtual Camera"],
   "doorbell_oyster": [name: "Ring Video Doorbell 4", driver: "Ring Virtual Camera"],
@@ -1866,12 +1872,12 @@ String getRingDeviceId(String id) {
   "lpd_v3": [name: "Ring Video Doorbell Pro", driver: "Ring Virtual Camera"],
   "lpd_v4": [name: "Ring Video Doorbell Pro 2", driver: "Ring Virtual Camera"],
   "spotlightw_v2": [name: "Ring Spotlight Cam Wired", driver: "Ring Virtual Light with Siren"],
-  "stickup_cam_longfin": [name: "Ring Spotlight Cam Pro Wired", driver: "Ring Virtual Light with Siren", dingable: true],
+  "stickup_cam_longfin": [name: "Ring Spotlight Cam Pro Wired", driver: "Ring Virtual Light with Siren"],
   "stickup_cam_wired": [name: "Ring Stick Up Cam Elite (2nd gen)", driver: "Ring Virtual Camera with Siren"],
   "stickup_cam_elite": [name: "Ring Stick Up Cam Elite (2nd gen)", driver: "Ring Virtual Camera with Siren"],
   "stickup_cam_lunar": [name: "Ring Stick Up Cam Battery/Solar (2nd gen)", driver: "Ring Virtual Camera with Siren"],
   "stickup_cam_mini": [name: "Ring Indoor Cam", driver: "Ring Virtual Camera with Siren"],
   "stickup_cam_v3": [name: "Ring Stick Up Cam (1st gen)", driver: "Ring Virtual Camera"],
-  "stickup_cam_v4": [name: "Ring Spotlight Cam Battery/Solar", driver: "Ring Virtual Camera"], // This appears to also be a Spotlight cam
+  "stickup_cam_v4": [name: "Ring Spotlight Cam Battery/Solar", driver: "Ring Virtual Light"],  // This appears to also be a Spotlight cam
   "stickup_cam": [name: "Ring Stick Up Cam (1st gen)", driver: "Ring Virtual Camera"],
 ].asImmutable()
