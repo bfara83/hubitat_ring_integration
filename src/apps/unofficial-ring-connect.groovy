@@ -616,6 +616,12 @@ def addDevices() {
 
   for (final String id in selectedDevices) {
     Map selectedDevice = devices.find { Map dev -> dev.id.toString() == id }
+
+    if (!selectedDevice) {
+      log.error("addDevices: Error adding device id: '${id}'. Available devices: ${devices}")
+      return
+    }
+
     logTrace "addDevices: Selected id ${id}, Selected device ${selectedDevice}"
 
     final Integer selectedDeviceId = selectedDevice.id
