@@ -617,12 +617,14 @@ def addDevices() {
   for (final String id in selectedDevices) {
     Map selectedDevice = devices.find { Map dev -> dev.id.toString() == id }
 
-    if (!selectedDevice) {
-      log.error("addDevices: Error adding device id: '${id}'. Available devices: ${devices}")
-      return
-    }
-
     logTrace "addDevices: Selected id ${id}, Selected device ${selectedDevice}"
+
+    if (!selectedDevice) {
+      final String tmpMsg = "addDevices: Error adding device id: '${id}'. Available devices: ${devices}"
+      log.error(tmpMsg)
+      sectionText += tmpMsg
+      continue
+    }
 
     final Integer selectedDeviceId = selectedDevice.id
 
@@ -633,7 +635,7 @@ def addDevices() {
       final String tmpMsg = "addDevices: Error adding device '${selectedDevice.name}'. Kind '${kind}' is not supported"
       log.error(tmpMsg)
       sectionText += tmpMsg
-      return
+      continue
     }
 
     boolean isHubDevice = false
@@ -1330,6 +1332,7 @@ void apiRequestTickets(final String dni) {
 void apiRequestSnapshotImages(final Map data) {
   logTrace("apiRequestSnapshotImages(${data})")
 
+  // groovylint-disable-next-line CouldBeElvis
   if (!state.snapshots) {
     state.snapshots = [:]
   }
@@ -1386,6 +1389,7 @@ void apiRequestSnapshotTimestamps(List<Integer> doorbotIds) {
           final curNewTimestamp = newTimestamps[doorbotIdStr]
           final curLastTimestamp = lastTimestamps[doorbotIdStr]
 
+          // groovylint-disable-next-line EmptyIfStatement
           if (curNewTimestamp == null) {
 
           } else if (curLastTimestamp == null) {
