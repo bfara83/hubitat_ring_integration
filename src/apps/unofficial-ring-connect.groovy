@@ -46,8 +46,8 @@ preferences {
   page(name: "secondStep")
   page(name: "authCheck")
   page(name: "locations")
-  page(name: "addDevices")
   page(name: "deviceDiscovery")
+  page(name: "addDevices")
   page(name: "notifications")
   page(name: "ifttt")
   page(name: "pollingPage")
@@ -352,7 +352,7 @@ def snapshots() {
       }
 
       input name: "snapshotInterval", type: "enum", title: "Interval between thumbnail refresh", required: true,
-        options: snapshotIntervals, defaultValue: 120, submitOnChange: true
+        options: pollIntervalsMap, defaultValue: 120, submitOnChange: true
 
       if (!state.motionCapables) {
         paragraph('<h2>Snapshot Prerequisite Error</h2>')
@@ -428,11 +428,11 @@ def deviceDiscovery() {
     }
   }
 
-  List apiResponse = apiRequestDevices()
+  List apiResponse = apiRequestClientsApiRefreshSync()
 
   if (!apiResponse) {
     return dynamicPage(name: "deviceDiscovery", title: "No devices found!", nextPage: "mainPage", uninstall: true) {
-      section("apiRequestDevices returned nothing. See logs for more details") { paragraph "" }
+      section("apiRequestClientsApiRefreshSync returned nothing. See logs for more details") { paragraph "" }
     }
   }
 
@@ -454,12 +454,12 @@ void donationPageSection() {
 }
 
 // Sets state.devices to a List of Maps of the form: {kind=base_station_v1, name=Ring Alarm Base Station - Alarm Base Station, id=dev_id_num}
-void loadAvailableDevices(List apiRequestDevicesResponse) {
+void loadAvailableDevices(List apiRequestClientsApiRefreshResponse) {
   logDebug "loadAvailableDevices()"
 
   state.devices = []
 
-  for (final Map node in apiRequestDevicesResponse) {
+  for (final Map node in apiRequestClientsApiRefreshResponse) {
     final String kind = node?.kind
 
     if (!settings.selectedLocations.contains(node?.location_id)) {
@@ -477,7 +477,7 @@ void loadAvailableDevices(List apiRequestDevicesResponse) {
 
 // @return a Map like: [dev_id_num:device_name]
 Map getAvailableDevicesOptions() {
-  logDebug "createAvailableDevicesOptions()"
+  logDebug "getAvailableDevicesOptions()"
 
   Map map = [:]
   for (final Map device in state.devices) {
@@ -486,7 +486,7 @@ Map getAvailableDevicesOptions() {
 
     // @todo If no one reports this error, simplify this code
     if (map.containsKey(key)) {
-      log.error("getAvailableDevicesOptions(): Device id '${key}' shows up more than once in apiRequestDevicesResponse. Please report this error so")
+      log.error("getAvailableDevicesOptions(): Device id '${key}' shows up more than once in apiRequestClientsApiRefreshResponse. Please report this error so")
     }
 
     map[key] = map[key] ? map[key] + " || " + value : value
@@ -514,7 +514,7 @@ void initialize() {
   if (snapshotPolling) {
     final Integer interval = snapshotInterval?.toInteger() ?: 600
 
-    logInfo "Snapshot polling started with an interval of ${snapshotIntervals[interval].toLowerCase()}."
+    logInfo "Snapshot polling started with an interval of ${pollIntervalsMap[interval].toLowerCase()}."
 
     //let's spread schedules out so that there is some randomness in how we hit the ring api
     final Integer currSec = getRandomInteger(60)
@@ -640,13 +640,9 @@ def addDevices() {
 
     boolean isHubDevice = false
 
-    ChildDeviceWrapper d = null
-    if (selectedDevice) {
-      d = getChildDeviceInternal(selectedDeviceId)
-    }
+    ChildDeviceWrapper d = getChildDeviceInternal(selectedDeviceId)
 
     if (d == null) {
-      logDebug selectedDevice
       if (["base_station_k1", "base_station_v1", "beams_bridge_v1"].contains(kind)) {
         isHubDevice = true
         enabledHubDoorbotIds.add(selectedDeviceId)
@@ -659,7 +655,7 @@ def addDevices() {
         try {
           log.warn "Creating a ${deviceType.name} with dni: ${getFormattedDNI(selectedDeviceId)}"
           d = addChildDevice("ring-hubitat-codahq", deviceType.driver, getFormattedDNI(selectedDeviceId),
-            [label: selectedDevice?.name ?: deviceType.name])
+            [label: selectedDevice.name ?: deviceType.name])
           d.refresh()
           sectionText += "Successfully added ${deviceType.name} with DNI ${getFormattedDNI(selectedDeviceId)}\r\n"
         } catch (e) {
@@ -820,7 +816,7 @@ Set<String> getEnabledSnappables() {
   return state.snappables?.findAll { it.value }?.keySet()
 }
 
-@Field final static Map snapshotIntervals = [
+@Field final static Map pollIntervalsMap = [
   30: "30 Seconds",
   60: "1 Minute",
   90: "1.5 Minutes",
@@ -1080,18 +1076,22 @@ boolean apiRequestAuthSession() {
   }
 }
 
-// Makes a ring api request for location data
-List apiRequestDevices() {
-  logTrace("apiRequestDevices()")
+/**
+ * Makes a synchronous ring api request for all data about ring devices
+ *
+ * @note This is a synchronous version of apiRequestClientsApiRefresh
+ */
+List apiRequestClientsApiRefreshSync() {
+  logTrace("apiRequestClientsApiRefreshSync()")
 
   Map params = makeClientsApiParams('/ring_devices', [query: [api_version: API_VERSION]])
 
-  return apiRequestSyncCommon("apiRequestDevices", false, params) { Map reqParams ->
+  return apiRequestSyncCommon("apiRequestClientsApiRefreshSync", false, params) { Map reqParams ->
     List retval = null
     httpGet(reqParams) { resp ->
       Map body = resp.data
 
-      logTrace "apiRequestDevices succeeded, body: ${JsonOutput.toJson(body)}"
+      logTrace "apiRequestClientsApiRefreshSync succeeded, body: ${JsonOutput.toJson(body)}"
 
       // @note Intenionally leaving out "beams" because they are handled by the beams bridge device
       retval = []
@@ -1111,20 +1111,22 @@ List apiRequestDevices() {
  *    settings.power_mode ['battery'/'wired'] // some battery cams can be wired and set to operate in 'wired' mode
  *    alerts.connection ['online'/'offline']
  *    alerts.battery: ['low']
+ *
+ * @note This is an asynchronous version of apiRequestClientsApiRefreshSync
  */
-void apiRequestDeviceRefresh(final String dni) {
-  logTrace("apiRequestDeviceRefresh(${dni})")
+void apiRequestClientsApiRefresh(final String dni) {
+  logTrace("apiRequestClientsApiRefresh(${dni})")
 
   Map params = makeClientsApiParams('/ring_devices/' + getRingDeviceId(dni), [query: [api_version: API_VERSION]])
 
-  apiRequestAsyncCommon("apiRequestDeviceRefresh", "Get", params, false) { resp ->
+  apiRequestAsyncCommon("apiRequestClientsApiRefresh", "Get", params, false) { resp ->
     Map body = resp.getJson()
-    logTrace "apiRequestDeviceRefresh for ${dni} succeeded, body: ${JsonOutput.toJson(body)}"
+    logTrace "apiRequestClientsApiRefresh for ${dni} succeeded, body: ${JsonOutput.toJson(body)}"
     ChildDeviceWrapper d = getChildDevice(dni)
     if (d) {
-      d.handleRefresh(body)
+      d.handleClientsApiRefresh(body)
     } else {
-      log.error "apiRequestDeviceRefresh cannot get child device with dni ${dni}"
+      log.error "apiRequestClientsApiRefresh cannot get child device with dni ${dni}"
     }
   }
 }
@@ -1135,8 +1137,8 @@ void apiRequestDeviceRefresh(final String dni) {
  * @param kind Kind of device ("doorbots", "chimes", etc.)
  * @param action Action to perform on device ("floodlight_light_off", etc)
  */
-void apiRequestDeviceSet(Map arguments, final String dni, final String kind) {
-  logTrace("apiRequestDeviceSet(${dni}, ${kind}, ${arguments})")
+void apiRequestClientsApiSet(Map arguments, final String dni, final String kind) {
+  logTrace("apiRequestClientsApiSet(${dni}, ${kind}, ${arguments})")
 
   String action = arguments.action
 
@@ -1146,16 +1148,16 @@ void apiRequestDeviceSet(Map arguments, final String dni, final String kind) {
 
   String httpFunction = arguments.getOrDefault('method', 'Put')
 
-  apiRequestAsyncCommon("apiRequestDeviceSet", httpFunction, params, false) { resp ->
+  apiRequestAsyncCommon("apiRequestClientsApiSet", httpFunction, params, false) { resp ->
     Map body = resp.getData() ? resp.getJson() : null
 
-    logTrace "apiRequestDeviceSet $kind ($arguments) for $dni succeeded, body: ${JsonOutput.toJson(body)}"
+    logTrace "apiRequestClientsApiSet $kind ($arguments) for $dni succeeded, body: ${JsonOutput.toJson(body)}"
 
     ChildDeviceWrapper d = getChildDevice(dni)
     if (d) {
-      d.handleDeviceSet(body, arguments)
+      d.handleClientsApiSet(body, arguments)
     } else {
-      log.error "apiRequestDeviceSet $kind ($arguments) cannot get child device with dni $dni"
+      log.error "apiRequestClientsApiSet $kind ($arguments) cannot get child device with dni $dni"
     }
   }
 }
@@ -1165,22 +1167,22 @@ void apiRequestDeviceSet(Map arguments, final String dni, final String kind) {
  * @param dni DNI of device to refresh
  * @param kind Kind of device ("doorbots", "chimes", etc.)
  */
-void apiRequestDeviceHealth(final String dni, final String kind) {
-  logTrace("apiRequestDeviceHealth(${dni}, ${kind})")
+void apiRequestClientsApiHealth(final String dni, final String kind) {
+  logTrace("apiRequestClientsApiHealth(${dni}, ${kind})")
 
   Map params = makeClientsApiParams('/' + kind + '/' + getRingDeviceId(dni) + '/health',
                                     [contentType: TEXT, requestContentType: JSON])
 
-  apiRequestAsyncCommon("apiRequestDeviceHealth", "Get", params, false) { resp ->
+  apiRequestAsyncCommon("apiRequestClientsApiHealth", "Get", params, false) { resp ->
     Map body = resp.getData() ? resp.getJson() : null
 
-    logTrace "apiRequestDeviceHealth ${kind} for ${dni} succeeded, body: ${JsonOutput.toJson(body)}"
+    logTrace "apiRequestClientsApiHealth ${kind} for ${dni} succeeded, body: ${JsonOutput.toJson(body)}"
 
     ChildDeviceWrapper d = getChildDevice(dni)
     if (d) {
-      d.handleHealth(body)
+      d.handleClientsApiHealth(body)
     } else {
-      log.error "apiRequestDeviceHealth ${kind} cannot get child device with dni ${dni}"
+      log.error "apiRequestClientsApiHealth ${kind} cannot get child device with dni ${dni}"
     }
   }
 }
@@ -1188,7 +1190,7 @@ void apiRequestDeviceHealth(final String dni, final String kind) {
 /**
  * Makes a ring api request for dings data
  *
- * @todo The returned object has a detection_type. There's also a settings.cv.settings.detection_types in the apiRequestDevices response
+ * @todo The returned object has a detection_type. There's also a settings.cv.settings.detection_types in the apiRequestClientsApiRefreshSync response
  */
 void apiRequestDings() {
   logTrace("apiRequestDings()")
@@ -1654,6 +1656,19 @@ Map makeAppApiParams(final String urlSuffix, final Map args, final Map headerArg
 }
 
 Map makeClientsApiParams(final String urlSuffix, final Map args, final Map headerArgs = [:]) {
+  Map params = [
+    uri: CLIENTS_API_BASE_URL + urlSuffix,
+    contentType: args.getOrDefault('contentType', JSON),
+  ]
+
+  params << args.subMap(['body', 'requestContentType', 'query'])
+
+  addHeadersToHttpRequest(params, headerArgs)
+
+  return params
+}
+
+Map makeDevicesApiParams(final String urlSuffix, final Map args, final Map headerArgs = [:]) {
   Map params = [
     uri: CLIENTS_API_BASE_URL + urlSuffix,
     contentType: args.getOrDefault('contentType', JSON),

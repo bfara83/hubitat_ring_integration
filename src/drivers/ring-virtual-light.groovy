@@ -88,8 +88,8 @@ void poll() { refresh() }
 
 void refresh() {
   logDebug "refresh()"
-  parent.apiRequestDeviceRefresh(device.deviceNetworkId)
-  parent.apiRequestDeviceHealth(device.deviceNetworkId, "doorbots")
+  parent.apiRequestClientsApiRefresh(device.deviceNetworkId)
+  parent.apiRequestClientsApiHealth(device.deviceNetworkId, "doorbots")
 }
 
 void getDings() {
@@ -139,7 +139,7 @@ void strobeOff() {
   }
 }
 
-void handleDeviceSet(final Map msg, final Map arguments) {
+void handleClientsApiSet(final Map msg, final Map arguments) {
   String action = arguments.action
 
   if (action == "floodlight_light_on") {
@@ -149,11 +149,11 @@ void handleDeviceSet(final Map msg, final Map arguments) {
     checkChanged("switch", "off")
   }
   else {
-    log.error "handleDeviceSet unsupported action ${action}, msg=${msg}, arguments=${arguments}"
+    log.error "handleClientsApiSet unsupported action ${action}, msg=${msg}, arguments=${arguments}"
   }
 }
 
-void handleHealth(final Map msg) {
+void handleClientsApiHealth(final Map msg) {
   if (msg.device_health) {
     if (msg.device_health.wifi_name) {
       checkChanged("wifi", msg.device_health.wifi_name)
@@ -176,7 +176,7 @@ void handleMotion(final Map msg) {
   }
 }
 
-void handleRefresh(final Map msg) {
+void handleClientsApiRefresh(final Map msg) {
   if (!discardBatteryLevel) {
     if (msg.battery_life != null) {
       checkChanged("battery", msg.battery_life, "%")
@@ -222,7 +222,7 @@ void runCleanup() {
 }
 
 void setFloodlightInternal(String state) {
-    parent.apiRequestDeviceSet(device.deviceNetworkId, "doorbots", action: "floodlight_light_" + state, method: 'Put')
+    parent.apiRequestClientsApiSet(device.deviceNetworkId, "doorbots", action: "floodlight_light_" + state, method: 'Put')
 }
 
 boolean checkChanged(final String attribute, final newStatus, final String unit=null, final String type=null) {

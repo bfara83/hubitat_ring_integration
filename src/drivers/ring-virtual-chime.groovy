@@ -75,8 +75,8 @@ void poll() { refresh() }
 
 void refresh() {
   logDebug "refresh()"
-  parent.apiRequestDeviceRefresh(device.deviceNetworkId)
-  parent.apiRequestDeviceHealth(device.deviceNetworkId, "chimes")
+  parent.apiRequestClientsApiRefresh(device.deviceNetworkId)
+  parent.apiRequestClientsApiHealth(device.deviceNetworkId, "chimes")
 
   // @todo This isn't quite working yet
   // parent.apiRequestDeviceGet(device.deviceNetworkId, "chimes", "linked_doorbots")
@@ -88,7 +88,7 @@ void playMotion() {
   if (isMuted()) {
     logInfo "playMotion: Not playing because device is muted"
   } else {
-    parent.apiRequestDeviceSet(device.deviceNetworkId, "chimes", action: 'play_sound', query: [kind: "motion"], method: 'Post')
+    parent.apiRequestClientsApiSet(device.deviceNetworkId, "chimes", action: 'play_sound', query: [kind: "motion"], method: 'Post')
   }
 }
 
@@ -96,7 +96,7 @@ void playDing() {
   if (isMuted()) {
     logInfo "playDing: Not playing because device is muted"
   } else {
-    parent.apiRequestDeviceSet(device.deviceNetworkId, "chimes", action: 'play_sound', query: [kind: "ding"], method: 'Post')
+    parent.apiRequestClientsApiSet(device.deviceNetworkId, "chimes", action: 'play_sound', query: [kind: "ding"], method: 'Post')
   }
 }
 
@@ -106,12 +106,12 @@ void snooze(minutes) {
 
   logTrace "Requesting snooze for $minutes min"
 
-  parent.apiRequestDeviceSet(device.deviceNetworkId, "chimes", action: 'do_not_disturb', method: 'Post', body: [time: minutes])
+  parent.apiRequestClientsApiSet(device.deviceNetworkId, "chimes", action: 'do_not_disturb', method: 'Post', body: [time: minutes])
 }
 
 void clearSnooze() {
   logTrace "Clearing snooze"
-  parent.apiRequestDeviceSet(device.deviceNetworkId, "chimes", action: 'do_not_disturb', method: 'Post', body: [:])
+  parent.apiRequestClientsApiSet(device.deviceNetworkId, "chimes", action: 'do_not_disturb', method: 'Post', body: [:])
 }
 
 void setVolume(volumelevel) {
@@ -126,7 +126,7 @@ void setVolume(volumelevel) {
     // Chime only accepts volume from 0 to 10
     final Integer sentValue = volumelevel / 10
 
-    parent.apiRequestDeviceSet(device.deviceNetworkId, "chimes", method: 'Put', body: [chime: [settings: [volume: sentValue]]])
+    parent.apiRequestClientsApiSet(device.deviceNetworkId, "chimes", method: 'Put', body: [chime: [settings: [volume: sentValue]]])
   }
   else {
     logInfo "Already at volume."
@@ -192,21 +192,7 @@ private boolean isMuted() {
   return device.currentValue("mute") == "muted"
 }
 
-void handleDeviceControl(final String action, final Map msg, final Map query) {
-  if (action == "play_sound") {
-    if (query?.kind) {
-      logInfo "Device ${device.label} played '${query?.kind}'"
-    }
-    else {
-      log.error "handleDeviceControl unsupported play_sound with query ${query}"
-    }
-  }
-  else {
-    log.error "handleDeviceControl unsupported action ${action}"
-  }
-}
-
-void handleDeviceSet(final Map msg, final Map arguments) {
+void handleClientsApiSet(final Map msg, final Map arguments) {
   String action = arguments.action
 
   if (action == null) {
@@ -214,18 +200,18 @@ void handleDeviceSet(final Map msg, final Map arguments) {
       updateVolumeInternal(arguments.body?.settings?.volume)
     }
     else {
-      log.error "handleDeviceSet unsupported null action with body: ${arguments.body}"
+      log.error "handleClientsApiSet unsupported null action with body: ${arguments.body}"
     }
   }
   else if (action == 'play_sound' || action == 'do_not_disturb') {
     // Nothing to do here
   }
   else {
-    log.error "handleDeviceSet unsupported action ${action}, msg=${msg}, arguments=${arguments}"
+    log.error "handleClientsApiSet unsupported action ${action}, msg=${msg}, arguments=${arguments}"
   }
 }
 
-void handleHealth(final Map msg) {
+void handleClientsApiHealth(final Map msg) {
   if (msg.device_health) {
     if (msg.device_health.wifi_name) {
       checkChanged("wifi", msg.device_health.wifi_name)
@@ -233,7 +219,7 @@ void handleHealth(final Map msg) {
   }
 }
 
-void handleRefresh(final Map msg) {
+void handleClientsApiRefresh(final Map msg) {
   if (msg.settings?.volume != null) {
     updateVolumeInternal(msg.settings.volume)
   }
