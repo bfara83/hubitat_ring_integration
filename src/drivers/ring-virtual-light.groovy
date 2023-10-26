@@ -21,9 +21,10 @@ metadata {
     capability "Battery"
     capability "MotionSensor"
     capability "Polling"
+    capability "Refresh"
     capability "Sensor"
     capability "Switch"
-    capability "Refresh"
+    capability "SwitchLevel"
 
     attribute "firmware", "string"
     attribute "battery2", "number"
@@ -118,6 +119,17 @@ void off() {
   setFloodlightInternal('off')
 }
 
+void setLevel(level, duration=null) {
+  if (duration != null) {
+    log.warn("setLevel duration value not supported")
+  }
+
+  // Translating SwitchLevel 0-100% to Ring brightness (1-10)
+  Integer brightnessLevel = Math.max(1, (level / 10).toInteger())
+  parent.apiRequestClientsApiSet(device.deviceNetworkId, "doorbots", action: 'light_intensity', method: 'Put',
+                                 query: ["doorbot[settings][light_intensity]": brightnessLevel])
+}
+
 void flash() {
   logInfo "${device.displayName} was set to flash with a rate of $strobeRate milliseconds for $strobeTimeout seconds"
   state.strobing = true
@@ -147,6 +159,12 @@ void handleClientsApiSet(final Map msg, final Map arguments) {
   }
   else if (action == "floodlight_light_off") {
     checkChanged("switch", "off")
+  }
+  else if (action == "light_intensity") {
+    Integer brightnessLevel = arguments.query?.get("doorbot[settings][light_intensity]")
+    if (brightnessLevel != null) {
+      checkChanged("level", brightnessLevel * 10)
+    }
   }
   else {
     log.error "handleClientsApiSet unsupported action ${action}, msg=${msg}, arguments=${arguments}"
@@ -208,6 +226,16 @@ void handleClientsApiRefresh(final Map msg) {
     if (health.rssi) {
       checkChanged("rssi", health.rssi)
     }
+
+    // Per Ring: is_sidewalk_gateway indicates only whether a device *can* be used as a Sidewalk gateway. sidewalk_connection
+    // indicates whether Sidewalk is enabled in the Ring account. Both must be true for Sidewalk to be enabled on a device
+    if (msg.is_sidewalk_gateway && health.sidewalk_connection) {
+      log.warn("Your device is being used as an Amazon sidewalk device.")
+    }
+  }
+
+  if (msg.settings?.floodlight_settings?.brightness != null) {
+    checkChanged("level", msg.settings.floodlight_settings.brightness * 10)
   }
 }
 

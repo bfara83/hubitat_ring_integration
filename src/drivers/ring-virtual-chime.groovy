@@ -203,8 +203,11 @@ void handleClientsApiSet(final Map msg, final Map arguments) {
       log.error "handleClientsApiSet unsupported null action with body: ${arguments.body}"
     }
   }
-  else if (action == 'play_sound' || action == 'do_not_disturb') {
-    // Nothing to do here
+  else if (action == 'play_sound') {
+      logInfo "Device ${device.label} played '${arguments.query?.kind}'"
+  }
+  else if (action == 'do_not_disturb') {
+      logInfo "Device ${device.label} snooze enabled with ${msg.time_remaining} minutes remaining"
   }
   else {
     log.error "handleClientsApiSet unsupported action ${action}, msg=${msg}, arguments=${arguments}"

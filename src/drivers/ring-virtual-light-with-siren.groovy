@@ -24,6 +24,7 @@ metadata {
     capability "Refresh"
     capability "Sensor"
     capability "Switch"
+    capability "SwitchLevel"
 
     attribute "firmware", "string"
     attribute "rssi", "number"
@@ -111,6 +112,17 @@ void off() {
   switchOff()
 }
 
+void setLevel(level, duration=null) {
+  if (duration != null) {
+    log.warn("setLevel duration value not supported")
+  }
+
+  // Translating SwitchLevel 0-100% to Ring brightness (1-10)
+  Integer brightnessLevel = Math.max(1, (level / 10).toInteger())
+  parent.apiRequestClientsApiSet(device.deviceNetworkId, "doorbots", action: 'light_intensity', method: 'Put',
+                                 query: ["doorbot[settings][light_intensity]": brightnessLevel])
+}
+
 void switchOff() {
   if (state.strobing) {
     unschedule()
@@ -181,6 +193,12 @@ void handleClientsApiSet(final Map msg, final Map arguments) {
   else if (action == "siren_off") {
     checkChanged('alarm', "off")
   }
+  else if (action == "light_intensity") {
+    Integer brightnessLevel = arguments.query?.get("doorbot[settings][light_intensity]")
+    if (brightnessLevel != null) {
+      checkChanged("level", brightnessLevel * 10)
+    }
+  }
   else {
     log.error "handleClientsApiSet unsupported action ${action}, msg=${msg}, arguments=${arguments}"
   }
@@ -238,6 +256,10 @@ void handleClientsApiRefresh(final Map msg) {
     if (msg.is_sidewalk_gateway && health.sidewalk_connection) {
       log.warn("Your device is being used as an Amazon sidewalk device.")
     }
+  }
+
+  if (msg.settings?.floodlight_settings?.brightness != null) {
+    checkChanged("level", msg.settings.floodlight_settings.brightness * 10)
   }
 }
 
