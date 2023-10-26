@@ -26,6 +26,7 @@ metadata {
     capability "Switch"
     capability "SwitchLevel"
 
+    attribute "connectionStatus", "enum", ["offline", "online"]
     attribute "firmware", "string"
     attribute "rssi", "number"
     attribute "wifi", "string"
@@ -228,6 +229,10 @@ void handleMotion(final Map msg) {
 }
 
 void handleClientsApiRefresh(final Map msg) {
+  if (msg.alerts?.connection != null) {
+    checkChanged("connectionStatus", msg.alerts.connection) // devices seem to be considered offline after 20 minutes
+  }
+
   if (msg.led_status) {
     checkChanged("switch", msg.led_status)
   }

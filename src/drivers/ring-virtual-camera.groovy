@@ -25,6 +25,7 @@ metadata {
     capability "Refresh"
     capability "Sensor"
 
+    attribute "connectionStatus", "enum", ["offline", "online"]
     attribute "firmware", "string"
     attribute "rssi", "number"
     attribute "wifi", "string"
@@ -119,6 +120,10 @@ void handleMotion(final Map msg) {
 }
 
 void handleClientsApiRefresh(final Map msg) {
+  if (msg.alerts?.connection != null) {
+    checkChanged("connectionStatus", msg.alerts.connection) // devices seem to be considered offline after 20 minutes
+  }
+
   if (!["jbox_v1", "lpd_v1", "lpd_v2"].contains(device.getDataValue("kind"))) {
     if (msg.battery_life != null) {
       checkChanged("battery", msg.battery_life, '%')

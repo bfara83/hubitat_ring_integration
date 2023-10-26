@@ -1,3 +1,4 @@
+/* groovylint-disable Indentation */
 /**
  *  Ring Virtual Camera with Siren Device Driver
  *
@@ -25,6 +26,7 @@ metadata {
     capability "Refresh"
     capability "Sensor"
 
+    attribute "connectionStatus", "enum", ["offline", "online"]
     attribute "firmware", "string"
     attribute "rssi", "number"
     attribute "wifi", "string"
@@ -145,6 +147,10 @@ void handleMotion(final Map msg) {
 }
 
 void handleClientsApiRefresh(final Map msg) {
+  if (msg.alerts?.connection != null) {
+    checkChanged("connectionStatus", msg.alerts.connection) // devices seem to be considered offline after 20 minutes
+  }
+
   if (msg.battery_life != null) {
     checkChanged("battery", msg.battery_life, '%')
   }

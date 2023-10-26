@@ -28,6 +28,7 @@ metadata {
     capability "Polling"
     capability "Tone"
 
+    attribute "connectionStatus", "enum", ["offline", "online"]
     attribute "rssi", "number"
     attribute "wifi", "string"
 
@@ -35,7 +36,7 @@ metadata {
     command "playMotion"
 
     command "clearSnooze"
-    command "snooze", [[name: 'Time', type: 'NUMBER', description: 'Snooze sounces for x minutes. [0..1440]']]
+    command "snooze", [[name: 'Time', type: 'NUMBER', description: 'Snooze sounds for x minutes. [0..1440]']]
   }
 
   preferences {
@@ -223,6 +224,10 @@ void handleClientsApiHealth(final Map msg) {
 }
 
 void handleClientsApiRefresh(final Map msg) {
+  if (msg.alerts?.connection != null) {
+    checkChanged("connectionStatus", msg.alerts.connection) // devices seem to be considered offline after 20 minutes
+  }
+
   if (msg.settings?.volume != null) {
     updateVolumeInternal(msg.settings.volume)
   }

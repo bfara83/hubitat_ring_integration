@@ -26,8 +26,9 @@ metadata {
     capability "Switch"
     capability "SwitchLevel"
 
-    attribute "firmware", "string"
     attribute "battery2", "number"
+    attribute "connectionStatus", "enum", ["offline", "online"]
+    attribute "firmware", "string"
     attribute "rssi", "number"
     attribute "wifi", "string"
 
@@ -195,6 +196,10 @@ void handleMotion(final Map msg) {
 }
 
 void handleClientsApiRefresh(final Map msg) {
+  if (msg.alerts?.connection != null) {
+    checkChanged("connectionStatus", msg.alerts.connection) // devices seem to be considered offline after 20 minutes
+  }
+
   if (!discardBatteryLevel) {
     if (msg.battery_life != null) {
       checkChanged("battery", msg.battery_life, "%")
