@@ -1104,8 +1104,8 @@ List apiRequestClientsApiRefreshSync() {
 }
 
 /**
- * Makes a ring api request for dings data
- * @param dni deviceNetworkId of device to refresh
+ * Makes a ring api request for all data about ring devices
+ * @param dni deviceNetworkId of device to refresh. If null, then all devices are refreshed
  * @todo Keys that could be useful:
  *    settings.motion_detection_enabled [true/false] // set by modes or Record Motion toggle
  *    settings.power_mode ['battery'/'wired'] // some battery cams can be wired and set to operate in 'wired' mode
@@ -1113,20 +1113,44 @@ List apiRequestClientsApiRefreshSync() {
  *    alerts.battery: ['low']
  *
  * @note This is an asynchronous version of apiRequestClientsApiRefreshSync
+ * @todo This could be used to refresh all camera/light/chime devices in a single api call, rather than separate calls for evry device
  */
 void apiRequestClientsApiRefresh(final String dni) {
   logTrace("apiRequestClientsApiRefresh(${dni})")
 
-  Map params = makeClientsApiParams('/ring_devices/' + getRingDeviceId(dni), [query: [api_version: API_VERSION]])
+  Map params = makeClientsApiParams('/ring_devices' + (dni ? "/${getRingDeviceId(dni)}" : ""), [query: [api_version: API_VERSION]])
 
   apiRequestAsyncCommon("apiRequestClientsApiRefresh", "Get", params, false) { resp ->
     Map body = resp.getJson()
     logTrace "apiRequestClientsApiRefresh for ${dni} succeeded, body: ${JsonOutput.toJson(body)}"
-    ChildDeviceWrapper d = getChildDevice(dni)
-    if (d) {
-      d.handleClientsApiRefresh(body)
+
+    if (dni != null) {
+      ChildDeviceWrapper d = getChildDevice(dni)
+      if (d) {
+        d.handleClientsApiRefresh(body)
+      } else {
+        log.error "apiRequestClientsApiRefresh cannot get child device with dni ${dni}"
+      }
     } else {
-      log.error "apiRequestClientsApiRefresh cannot get child device with dni ${dni}"
+      for (String key in ['authorized_doorbots', 'chimes', 'doorbots', 'stickup_cams']) {
+        if (body.containsKey(key)) {
+          for (Map update in body[key]) {
+            String curDni = getFormattedDNI(update.id)
+            if (update.id.toString() in selectedDevices) {
+              ChildDeviceWrapper d = getChildDevice(curDni)
+              if (d) {
+                d.handleClientsApiRefresh(update)
+              }
+              else {
+                log.error "apiRequestClientsApiRefresh(null) cannot get child device with dni ${curDni}"
+              }
+            }
+            else {
+              logTrace("apiRequestClientsApiRefresh(null) skipping dni ${curDni} because it isn't a selected device")
+            }
+          }
+        }
+      }
     }
   }
 }
