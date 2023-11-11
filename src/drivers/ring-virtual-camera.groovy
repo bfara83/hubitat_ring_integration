@@ -80,6 +80,7 @@ void push(buttonNumber) {
   log.error "Not implemented! push(buttonNumber)"
 }
 
+// apiRequestDevicesApiSet(device.deviceNetworkId, "devices", action: "settings") returns something for this device, but there's no use for those values yet
 void refresh() {
   logDebug "refresh()"
   parent.apiRequestClientsApiRefresh(device.deviceNetworkId)

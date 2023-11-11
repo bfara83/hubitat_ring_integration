@@ -29,11 +29,13 @@ metadata {
     attribute "battery2", "number"
     attribute "connectionStatus", "enum", ["offline", "online"]
     attribute "firmware", "string"
+    attribute 'motionActivatedLights', 'enum', ["enabled", "disabled"]
     attribute "rssi", "number"
     attribute "wifi", "string"
 
     command "flash"
     command "getDings"
+    command "motionActivatedLights", [[name: "state", description: "Enable or disable lights on motion", type: "ENUM", constraints: ["enable", "disable"]] ]
   }
 
   preferences {
@@ -92,6 +94,7 @@ void refresh() {
   logDebug "refresh()"
   parent.apiRequestClientsApiRefresh(device.deviceNetworkId)
   parent.apiRequestClientsApiHealth(device.deviceNetworkId, "doorbots")
+  parent.apiRequestDevicesApiSet(device.deviceNetworkId, "devices", action: "settings", method: 'Get')
 }
 
 void getDings() {
@@ -152,6 +155,12 @@ void strobeOff() {
   }
 }
 
+void motionActivatedLights(state) {
+    // This is backwards as it's manipulating "always snooze"
+    final boolean stateOfLight = !(state == "enable")
+    parent.apiRequestDevicesApiSet(device.deviceNetworkId, "devices", action: "settings", body: [enable: stateOfLight, light_snooze_settings: ["always_on": stateOfLight]])
+}
+
 void handleClientsApiSet(final Map msg, final Map arguments) {
   String action = arguments.action
 
@@ -165,6 +174,20 @@ void handleClientsApiSet(final Map msg, final Map arguments) {
     Integer brightnessLevel = arguments.query?.get("doorbot[settings][light_intensity]")
     if (brightnessLevel != null) {
       checkChanged("level", brightnessLevel * 10)
+    }
+  }
+  else {
+    log.error "handleClientsApiSet unsupported action ${action}, msg=${msg}, arguments=${arguments}"
+  }
+}
+
+void handleDevicesApiSet(final Map msg, final Map arguments) {
+  String action = arguments.action
+
+  if (action == "settings") {
+    if (msg.light_snooze_settings?.always_on != null) {
+      // This is backwards as it's manipulating "always snooze"
+      checkChanged("motionActivatedLights", msg.light_snooze_settings?.always_on ? "disabled" : "enabled")
     }
   }
   else {

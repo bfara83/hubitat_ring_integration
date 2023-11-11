@@ -498,6 +498,46 @@ void installed() { initialize() }
 
 void updated() { initialize() }
 
+/**
+ * @param interval Schedule interval in seconds
+ */
+List buildChronExpression(Integer interval) {
+  //let's spread schedules out so that there is some randomness in how we hit the ring api
+  final Integer currSec = getRandomInteger(60)
+  final Integer altSec = (currSec + 30) > 59 ? currSec - 30 : currSec + 30
+  final Integer currMin = getRandomInteger(60)
+
+  String chronExpression = null
+  String chronExpression2 = null
+
+  if (interval == 30) {
+    final String secString = currSec > altSec ? "${altSec},${currSec}" : "${currSec},${altSec}"
+    chronExpression = "${secString} * * * * ? *"
+  }
+  else if (interval == 60) {
+    chronExpression = "${currSec} * * * * ? *"
+  }
+  else if (interval == 90) {
+    final Integer startMin = currMin % 3 // Minute to start job
+    final Integer offset = currSec >= 30 ? 1 : 0
+    chronExpression = "${currSec} ${startMin}/3 * * * ? *"
+    chronExpression2 = "${altSec} ${(startMin + 1 + offset) % 3}/3 * * * ? *"
+  }
+  else if (interval in 120..1800) { // Minutes
+    final Integer mins = interval / 60
+    chronExpression = "${currSec} ${currMin % mins}/${mins} * * * ? *"
+  }
+  else if (interval in 3600..43200) { // Hours
+    final Integer hours = interval / 60 / 60
+    chronExpression = "${currSec} ${currMin} 0/${hours} * * ? *"
+  }
+  else if (interval == 86400) { // Day
+    chronExpression = "${currSec} ${currMin} ${getRandomInteger(24)} * * ? *"
+  }
+
+  return [chronExpression, chronExpression2]
+}
+
 void initialize() {
   logDebug "initialize()"
 
@@ -515,37 +555,14 @@ void initialize() {
     final Integer interval = snapshotInterval?.toInteger() ?: 600
 
     logInfo "Snapshot polling started with an interval of ${pollIntervalsMap[interval].toLowerCase()}."
+    final def (String chronExpression, String chronExpression2) = buildChronExpression(interval)
 
-    //let's spread schedules out so that there is some randomness in how we hit the ring api
-    final Integer currSec = getRandomInteger(60)
-    final Integer altSec = (currSec + 30) > 59 ? currSec - 30 : currSec + 30
-    final Integer currMin = getRandomInteger(60)
-
-    if (interval == 30) {
-      final String secString = currSec > altSec ? "${altSec},${currSec}" : "${currSec},${altSec}"
-      schedule("${secString} * * * * ? *", updateSnapshots)
-    }
-    else if (interval == 60) {
-      schedule("${currSec} * * * * ? *", updateSnapshots)
-    }
-    else if (interval == 90) {
-      final Integer startMin = currMin % 3 // Minute to start job
-      final Integer offset = currSec >= 30 ? 1 : 0
-      schedule("${currSec} ${startMin}/3 * * * ? *", updateSnapshots)
-      schedule("${altSec} ${(startMin + 1 + offset) % 3}/3 * * * ? *", updateSnapshots, [overwrite: false])
-    }
-    else if (interval in 120..1800) { // Minutes
-      final Integer mins = interval / 60
-      schedule("${currSec} ${currMin % mins}/${mins} * * * ? *", updateSnapshots)
-    }
-    else if (interval in 3600..43200) { // Hours
-      final Integer hours = interval / 60 / 60
-      schedule("${currSec} ${currMin} 0/${hours} * * ? *", updateSnapshots)
-    }
-    else if (interval == 86400) { // Day
-      schedule("${currSec} ${currMin} ${getRandomInteger(24)} * * ? *", updateSnapshots)
-    }
-    else {
+    if (chronExpression != null) {
+      schedule(chronExpression, updateSnapshots)
+      if (chronExpression2 != null) {
+        schedule(chronExpression2, updateSnapshots, [overwrite: false])
+      }
+    } else {
       log.error("Unsupported snapshot interval ${interval}")
     }
   }
@@ -848,9 +865,9 @@ void resetAccessToken() {
 
 void addHeadersToHttpRequest(Map params, Map args = [:]) {
   params.headers = [
-    'User-Agent': 'android:com.ringapp:3.25.0(26452333)',
+    'User-Agent': 'android:com.ringapp:3.65.0(70471064)',
     'app_brand': 'ring',
-    'Accept-Encoding': 'gzip, deflate',
+    'Accept-Encoding': 'gzip',
     'Connection': 'Keep-Alive',
   ]
   params.headers['Host'] = new URI(params.uri).host
@@ -1109,11 +1126,10 @@ List apiRequestClientsApiRefreshSync() {
  * @todo Keys that could be useful:
  *    settings.motion_detection_enabled [true/false] // set by modes or Record Motion toggle
  *    settings.power_mode ['battery'/'wired'] // some battery cams can be wired and set to operate in 'wired' mode
- *    alerts.connection ['online'/'offline']
  *    alerts.battery: ['low']
+ * @todo This could be used to refresh all camera/light/chime devices in a single api call, rather than separate calls for evry device
  *
  * @note This is an asynchronous version of apiRequestClientsApiRefreshSync
- * @todo This could be used to refresh all camera/light/chime devices in a single api call, rather than separate calls for evry device
  */
 void apiRequestClientsApiRefresh(final String dni) {
   logTrace("apiRequestClientsApiRefresh(${dni})")
@@ -1156,10 +1172,13 @@ void apiRequestClientsApiRefresh(final String dni) {
 }
 
 /**
- * Makes a ring api request to set a value for a device
+ * Makes a ring api request to set a value for a device using api.ring.com/clients_api
  * @param dni DNI of device to refresh
  * @param kind Kind of device ("doorbots", "chimes", etc.)
  * @param action Action to perform on device ("floodlight_light_off", etc)
+ *
+ * @note The difference between api.ring.com/devices/v1 and api.ring.com/clients_api is unclear. Ring seems
+ *       to arbitrarily switch between the two
  */
 void apiRequestClientsApiSet(Map arguments, final String dni, final String kind) {
   logTrace("apiRequestClientsApiSet(${dni}, ${kind}, ${arguments})")
@@ -1207,6 +1226,41 @@ void apiRequestClientsApiHealth(final String dni, final String kind) {
       d.handleClientsApiHealth(body)
     } else {
       log.error "apiRequestClientsApiHealth ${kind} cannot get child device with dni ${dni}"
+    }
+  }
+}
+
+/**
+ * Makes a ring api request to set a value for a device using api.ring.com/devices/v1
+ *
+ * @param dni DNI of device to refresh
+ * @param kind Kind of device ("doorbots", "chimes", etc.)
+ * @param action Action to perform on device ("floodlight_light_off", etc)
+ *
+ * @note The difference between api.ring.com/devices/v1 and api.ring.com/clients_api is unclear. Ring seems
+ *       to arbitrarily switch between the two
+ */
+void apiRequestDevicesApiSet(Map arguments, final String dni, final String kind) {
+  logTrace("apiRequestDevicesApiSet(${dni}, ${kind}, ${arguments})")
+
+  String action = arguments.action
+
+  Map params = makeDevicesApiParams('/' + kind + '/' + getRingDeviceId(dni) + (action ? "/${action}" : ""),
+                                    [contentType: TEXT, requestContentType: JSON, body: arguments.getOrDefault('body', ""),
+                                     query: arguments.query])
+
+  String httpFunction = arguments.getOrDefault('method', 'Patch')
+
+  apiRequestAsyncCommon("apiRequestDevicesApiSet", httpFunction, params, false) { resp ->
+    Map body = resp.getData() ? resp.getJson() : null
+
+    logTrace "apiRequestDevicesApiSet $kind ($arguments) for $dni succeeded, body: ${JsonOutput.toJson(body)}"
+
+    ChildDeviceWrapper d = getChildDevice(dni)
+    if (d) {
+      d.handleDevicesApiSet(body, arguments)
+    } else {
+      log.error "apiRequestDevicesApiSet $kind ($arguments) cannot get child device with dni $dni"
     }
   }
 }
@@ -1694,7 +1748,7 @@ Map makeClientsApiParams(final String urlSuffix, final Map args, final Map heade
 
 Map makeDevicesApiParams(final String urlSuffix, final Map args, final Map headerArgs = [:]) {
   Map params = [
-    uri: CLIENTS_API_BASE_URL + urlSuffix,
+    uri: DEVICES_API_BASE_URL + urlSuffix,
     contentType: args.getOrDefault('contentType', JSON),
   ]
 

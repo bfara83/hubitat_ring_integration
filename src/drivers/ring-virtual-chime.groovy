@@ -74,6 +74,7 @@ void parse(String description) {
 
 void poll() { refresh() }
 
+// apiRequestDevicesApiSet(device.deviceNetworkId, "devices", action: "settings") returns something for this device, but there's no use for those values yet
 void refresh() {
   logDebug "refresh()"
   parent.apiRequestClientsApiRefresh(device.deviceNetworkId)
