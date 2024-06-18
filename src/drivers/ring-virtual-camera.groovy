@@ -25,6 +25,7 @@ metadata {
     capability "Refresh"
     capability "Sensor"
 
+    attribute "connectionStatus", "enum", ["offline", "online"]
     attribute "firmware", "string"
     attribute "rssi", "number"
     attribute "wifi", "string"
@@ -79,10 +80,11 @@ void push(buttonNumber) {
   log.error "Not implemented! push(buttonNumber)"
 }
 
+// apiRequestDevicesApiSet(device.deviceNetworkId, "devices", action: "settings") returns something for this device, but there's no use for those values yet
 void refresh() {
   logDebug "refresh()"
-  parent.apiRequestDeviceRefresh(device.deviceNetworkId)
-  parent.apiRequestDeviceHealth(device.deviceNetworkId, "doorbots")
+  parent.apiRequestClientsApiRefresh(device.deviceNetworkId)
+  parent.apiRequestClientsApiHealth(device.deviceNetworkId, "doorbots")
 }
 
 void getDings() {
@@ -95,7 +97,7 @@ void handleDing(final Map msg) {
   sendEvent(name: "pushed", value: 1, isStateChange: true)
 }
 
-void handleHealth(final Map msg) {
+void handleClientsApiHealth(final Map msg) {
   if (msg.device_health) {
     if (msg.device_health.wifi_name) {
       checkChanged("wifi", msg.device_health.wifi_name)
@@ -118,7 +120,11 @@ void handleMotion(final Map msg) {
   }
 }
 
-void handleRefresh(final Map msg) {
+void handleClientsApiRefresh(final Map msg) {
+  if (msg.alerts?.connection != null) {
+    checkChanged("connectionStatus", msg.alerts.connection) // devices seem to be considered offline after 20 minutes
+  }
+
   if (!["jbox_v1", "lpd_v1", "lpd_v2"].contains(device.getDataValue("kind"))) {
     if (msg.battery_life != null) {
       checkChanged("battery", msg.battery_life, '%')

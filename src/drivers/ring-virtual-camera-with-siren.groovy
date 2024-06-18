@@ -1,3 +1,4 @@
+/* groovylint-disable Indentation */
 /**
  *  Ring Virtual Camera with Siren Device Driver
  *
@@ -25,6 +26,7 @@ metadata {
     capability "Refresh"
     capability "Sensor"
 
+    attribute "connectionStatus", "enum", ["offline", "online"]
     attribute "firmware", "string"
     attribute "rssi", "number"
     attribute "wifi", "string"
@@ -72,10 +74,11 @@ void parse(String description) {
 
 void poll() { refresh() }
 
+// apiRequestDevicesApiSet(device.deviceNetworkId, "devices", action: "settings") returns something for this device, but there's no use for those values yet
 void refresh() {
   logDebug "refresh()"
-  parent.apiRequestDeviceRefresh(device.deviceNetworkId)
-  parent.apiRequestDeviceHealth(device.deviceNetworkId, "doorbots")
+  parent.apiRequestClientsApiRefresh(device.deviceNetworkId)
+  parent.apiRequestClientsApiHealth(device.deviceNetworkId, "doorbots")
 }
 
 void getDings() {
@@ -103,7 +106,7 @@ void push(Integer button) {
   log.error "Push not implemented for device type ${device.getDataValue("kind")}"
 }
 
-void handleDeviceSet(final Map msg, final Map arguments) {
+void handleClientsApiSet(final Map msg, final Map arguments) {
   String action = arguments.action
 
   if (action == "siren_on") {
@@ -117,11 +120,11 @@ void handleDeviceSet(final Map msg, final Map arguments) {
     checkChanged('alarm', "off")
   }
   else {
-    log.error "handleDeviceSet unsupported action ${action}, msg=${msg}, arguments=${arguments}"
+    log.error "handleClientsApiSet unsupported action ${action}, msg=${msg}, arguments=${arguments}"
   }
 }
 
-void handleHealth(final Map msg) {
+void handleClientsApiHealth(final Map msg) {
   if (msg.device_health) {
     if (msg.device_health.wifi_name) {
       checkChanged("wifi", msg.device_health.wifi_name)
@@ -144,7 +147,11 @@ void handleMotion(final Map msg) {
   }
 }
 
-void handleRefresh(final Map msg) {
+void handleClientsApiRefresh(final Map msg) {
+  if (msg.alerts?.connection != null) {
+    checkChanged("connectionStatus", msg.alerts.connection) // devices seem to be considered offline after 20 minutes
+  }
+
   if (msg.battery_life != null) {
     checkChanged("battery", msg.battery_life, '%')
   }
@@ -187,7 +194,7 @@ void runCleanup() {
 }
 
 void setSirenInternal(String state) {
-    parent.apiRequestDeviceSet(device.deviceNetworkId, "doorbots", action: "siren_" + state, method: 'Put')
+    parent.apiRequestClientsApiSet(device.deviceNetworkId, "doorbots", action: "siren_" + state, method: 'Put')
 }
 
 boolean checkChanged(final String attribute, final newStatus, final String unit=null, final String type=null) {

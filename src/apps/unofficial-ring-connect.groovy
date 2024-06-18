@@ -46,8 +46,8 @@ preferences {
   page(name: "secondStep")
   page(name: "authCheck")
   page(name: "locations")
-  page(name: "addDevices")
   page(name: "deviceDiscovery")
+  page(name: "addDevices")
   page(name: "notifications")
   page(name: "ifttt")
   page(name: "pollingPage")
@@ -352,7 +352,7 @@ def snapshots() {
       }
 
       input name: "snapshotInterval", type: "enum", title: "Interval between thumbnail refresh", required: true,
-        options: snapshotIntervals, defaultValue: 120, submitOnChange: true
+        options: pollIntervalsMap, defaultValue: 120, submitOnChange: true
 
       if (!state.motionCapables) {
         paragraph('<h2>Snapshot Prerequisite Error</h2>')
@@ -428,11 +428,11 @@ def deviceDiscovery() {
     }
   }
 
-  List apiResponse = apiRequestDevices()
+  List apiResponse = apiRequestClientsApiRefreshSync()
 
   if (!apiResponse) {
     return dynamicPage(name: "deviceDiscovery", title: "No devices found!", nextPage: "mainPage", uninstall: true) {
-      section("apiRequestDevices returned nothing. See logs for more details") { paragraph "" }
+      section("apiRequestClientsApiRefreshSync returned nothing. See logs for more details") { paragraph "" }
     }
   }
 
@@ -454,12 +454,12 @@ void donationPageSection() {
 }
 
 // Sets state.devices to a List of Maps of the form: {kind=base_station_v1, name=Ring Alarm Base Station - Alarm Base Station, id=dev_id_num}
-void loadAvailableDevices(List apiRequestDevicesResponse) {
+void loadAvailableDevices(List apiRequestClientsApiRefreshResponse) {
   logDebug "loadAvailableDevices()"
 
   state.devices = []
 
-  for (final Map node in apiRequestDevicesResponse) {
+  for (final Map node in apiRequestClientsApiRefreshResponse) {
     final String kind = node?.kind
 
     if (!settings.selectedLocations.contains(node?.location_id)) {
@@ -477,7 +477,7 @@ void loadAvailableDevices(List apiRequestDevicesResponse) {
 
 // @return a Map like: [dev_id_num:device_name]
 Map getAvailableDevicesOptions() {
-  logDebug "createAvailableDevicesOptions()"
+  logDebug "getAvailableDevicesOptions()"
 
   Map map = [:]
   for (final Map device in state.devices) {
@@ -486,7 +486,7 @@ Map getAvailableDevicesOptions() {
 
     // @todo If no one reports this error, simplify this code
     if (map.containsKey(key)) {
-      log.error("getAvailableDevicesOptions(): Device id '${key}' shows up more than once in apiRequestDevicesResponse. Please report this error so")
+      log.error("getAvailableDevicesOptions(): Device id '${key}' shows up more than once in apiRequestClientsApiRefreshResponse. Please report this error so")
     }
 
     map[key] = map[key] ? map[key] + " || " + value : value
@@ -497,6 +497,46 @@ Map getAvailableDevicesOptions() {
 void installed() { initialize() }
 
 void updated() { initialize() }
+
+/**
+ * @param interval Schedule interval in seconds
+ */
+List buildChronExpression(Integer interval) {
+  //let's spread schedules out so that there is some randomness in how we hit the ring api
+  final Integer currSec = getRandomInteger(60)
+  final Integer altSec = (currSec + 30) > 59 ? currSec - 30 : currSec + 30
+  final Integer currMin = getRandomInteger(60)
+
+  String chronExpression = null
+  String chronExpression2 = null
+
+  if (interval == 30) {
+    final String secString = currSec > altSec ? "${altSec},${currSec}" : "${currSec},${altSec}"
+    chronExpression = "${secString} * * * * ? *"
+  }
+  else if (interval == 60) {
+    chronExpression = "${currSec} * * * * ? *"
+  }
+  else if (interval == 90) {
+    final Integer startMin = currMin % 3 // Minute to start job
+    final Integer offset = currSec >= 30 ? 1 : 0
+    chronExpression = "${currSec} ${startMin}/3 * * * ? *"
+    chronExpression2 = "${altSec} ${(startMin + 1 + offset) % 3}/3 * * * ? *"
+  }
+  else if (interval in 120..1800) { // Minutes
+    final Integer mins = interval / 60
+    chronExpression = "${currSec} ${currMin % mins}/${mins} * * * ? *"
+  }
+  else if (interval in 3600..43200) { // Hours
+    final Integer hours = interval / 60 / 60
+    chronExpression = "${currSec} ${currMin} 0/${hours} * * ? *"
+  }
+  else if (interval == 86400) { // Day
+    chronExpression = "${currSec} ${currMin} ${getRandomInteger(24)} * * ? *"
+  }
+
+  return [chronExpression, chronExpression2]
+}
 
 void initialize() {
   logDebug "initialize()"
@@ -514,38 +554,15 @@ void initialize() {
   if (snapshotPolling) {
     final Integer interval = snapshotInterval?.toInteger() ?: 600
 
-    logInfo "Snapshot polling started with an interval of ${snapshotIntervals[interval].toLowerCase()}."
+    logInfo "Snapshot polling started with an interval of ${pollIntervalsMap[interval].toLowerCase()}."
+    final def (String chronExpression, String chronExpression2) = buildChronExpression(interval)
 
-    //let's spread schedules out so that there is some randomness in how we hit the ring api
-    final Integer currSec = getRandomInteger(60)
-    final Integer altSec = (currSec + 30) > 59 ? currSec - 30 : currSec + 30
-    final Integer currMin = getRandomInteger(60)
-
-    if (interval == 30) {
-      final String secString = currSec > altSec ? "${altSec},${currSec}" : "${currSec},${altSec}"
-      schedule("${secString} * * * * ? *", updateSnapshots)
-    }
-    else if (interval == 60) {
-      schedule("${currSec} * * * * ? *", updateSnapshots)
-    }
-    else if (interval == 90) {
-      final Integer startMin = currMin % 3 // Minute to start job
-      final Integer offset = currSec >= 30 ? 1 : 0
-      schedule("${currSec} ${startMin}/3 * * * ? *", updateSnapshots)
-      schedule("${altSec} ${(startMin + 1 + offset) % 3}/3 * * * ? *", updateSnapshots, [overwrite: false])
-    }
-    else if (interval in 120..1800) { // Minutes
-      final Integer mins = interval / 60
-      schedule("${currSec} ${currMin % mins}/${mins} * * * ? *", updateSnapshots)
-    }
-    else if (interval in 3600..43200) { // Hours
-      final Integer hours = interval / 60 / 60
-      schedule("${currSec} ${currMin} 0/${hours} * * ? *", updateSnapshots)
-    }
-    else if (interval == 86400) { // Day
-      schedule("${currSec} ${currMin} ${getRandomInteger(24)} * * ? *", updateSnapshots)
-    }
-    else {
+    if (chronExpression != null) {
+      schedule(chronExpression, updateSnapshots)
+      if (chronExpression2 != null) {
+        schedule(chronExpression2, updateSnapshots, [overwrite: false])
+      }
+    } else {
       log.error("Unsupported snapshot interval ${interval}")
     }
   }
@@ -640,13 +657,9 @@ def addDevices() {
 
     boolean isHubDevice = false
 
-    ChildDeviceWrapper d = null
-    if (selectedDevice) {
-      d = getChildDeviceInternal(selectedDeviceId)
-    }
+    ChildDeviceWrapper d = getChildDeviceInternal(selectedDeviceId)
 
     if (d == null) {
-      logDebug selectedDevice
       if (["base_station_k1", "base_station_v1", "beams_bridge_v1"].contains(kind)) {
         isHubDevice = true
         enabledHubDoorbotIds.add(selectedDeviceId)
@@ -659,7 +672,7 @@ def addDevices() {
         try {
           log.warn "Creating a ${deviceType.name} with dni: ${getFormattedDNI(selectedDeviceId)}"
           d = addChildDevice("ring-hubitat-codahq", deviceType.driver, getFormattedDNI(selectedDeviceId),
-            [label: selectedDevice?.name ?: deviceType.name])
+            [label: selectedDevice.name ?: deviceType.name])
           d.refresh()
           sectionText += "Successfully added ${deviceType.name} with DNI ${getFormattedDNI(selectedDeviceId)}\r\n"
         } catch (e) {
@@ -820,7 +833,7 @@ Set<String> getEnabledSnappables() {
   return state.snappables?.findAll { it.value }?.keySet()
 }
 
-@Field final static Map snapshotIntervals = [
+@Field final static Map pollIntervalsMap = [
   30: "30 Seconds",
   60: "1 Minute",
   90: "1.5 Minutes",
@@ -852,9 +865,9 @@ void resetAccessToken() {
 
 void addHeadersToHttpRequest(Map params, Map args = [:]) {
   params.headers = [
-    'User-Agent': 'android:com.ringapp:3.25.0(26452333)',
+    'User-Agent': 'android:com.ringapp:3.65.0(70471064)',
     'app_brand': 'ring',
-    'Accept-Encoding': 'gzip, deflate',
+    'Accept-Encoding': 'gzip',
     'Connection': 'Keep-Alive',
   ]
   params.headers['Host'] = new URI(params.uri).host
@@ -1080,18 +1093,22 @@ boolean apiRequestAuthSession() {
   }
 }
 
-// Makes a ring api request for location data
-List apiRequestDevices() {
-  logTrace("apiRequestDevices()")
+/**
+ * Makes a synchronous ring api request for all data about ring devices
+ *
+ * @note This is a synchronous version of apiRequestClientsApiRefresh
+ */
+List apiRequestClientsApiRefreshSync() {
+  logTrace("apiRequestClientsApiRefreshSync()")
 
   Map params = makeClientsApiParams('/ring_devices', [query: [api_version: API_VERSION]])
 
-  return apiRequestSyncCommon("apiRequestDevices", false, params) { Map reqParams ->
+  return apiRequestSyncCommon("apiRequestClientsApiRefreshSync", false, params) { Map reqParams ->
     List retval = null
     httpGet(reqParams) { resp ->
       Map body = resp.data
 
-      logTrace "apiRequestDevices succeeded, body: ${JsonOutput.toJson(body)}"
+      logTrace "apiRequestClientsApiRefreshSync succeeded, body: ${JsonOutput.toJson(body)}"
 
       // @note Intenionally leaving out "beams" because they are handled by the beams bridge device
       retval = []
@@ -1104,39 +1121,67 @@ List apiRequestDevices() {
 }
 
 /**
- * Makes a ring api request for dings data
- * @param dni deviceNetworkId of device to refresh
+ * Makes a ring api request for all data about ring devices
+ * @param dni deviceNetworkId of device to refresh. If null, then all devices are refreshed
  * @todo Keys that could be useful:
  *    settings.motion_detection_enabled [true/false] // set by modes or Record Motion toggle
  *    settings.power_mode ['battery'/'wired'] // some battery cams can be wired and set to operate in 'wired' mode
- *    alerts.connection ['online'/'offline']
  *    alerts.battery: ['low']
+ * @todo This could be used to refresh all camera/light/chime devices in a single api call, rather than separate calls for evry device
+ *
+ * @note This is an asynchronous version of apiRequestClientsApiRefreshSync
  */
-void apiRequestDeviceRefresh(final String dni) {
-  logTrace("apiRequestDeviceRefresh(${dni})")
+void apiRequestClientsApiRefresh(final String dni) {
+  logTrace("apiRequestClientsApiRefresh(${dni})")
 
-  Map params = makeClientsApiParams('/ring_devices/' + getRingDeviceId(dni), [query: [api_version: API_VERSION]])
+  Map params = makeClientsApiParams('/ring_devices' + (dni ? "/${getRingDeviceId(dni)}" : ""), [query: [api_version: API_VERSION]])
 
-  apiRequestAsyncCommon("apiRequestDeviceRefresh", "Get", params, false) { resp ->
+  apiRequestAsyncCommon("apiRequestClientsApiRefresh", "Get", params, false) { resp ->
     Map body = resp.getJson()
-    logTrace "apiRequestDeviceRefresh for ${dni} succeeded, body: ${JsonOutput.toJson(body)}"
-    ChildDeviceWrapper d = getChildDevice(dni)
-    if (d) {
-      d.handleRefresh(body)
+    logTrace "apiRequestClientsApiRefresh for ${dni} succeeded, body: ${JsonOutput.toJson(body)}"
+
+    if (dni != null) {
+      ChildDeviceWrapper d = getChildDevice(dni)
+      if (d) {
+        d.handleClientsApiRefresh(body)
+      } else {
+        log.error "apiRequestClientsApiRefresh cannot get child device with dni ${dni}"
+      }
     } else {
-      log.error "apiRequestDeviceRefresh cannot get child device with dni ${dni}"
+      for (String key in ['authorized_doorbots', 'chimes', 'doorbots', 'stickup_cams']) {
+        if (body.containsKey(key)) {
+          for (Map update in body[key]) {
+            String curDni = getFormattedDNI(update.id)
+            if (update.id.toString() in selectedDevices) {
+              ChildDeviceWrapper d = getChildDevice(curDni)
+              if (d) {
+                d.handleClientsApiRefresh(update)
+              }
+              else {
+                log.error "apiRequestClientsApiRefresh(null) cannot get child device with dni ${curDni}"
+              }
+            }
+            else {
+              logTrace("apiRequestClientsApiRefresh(null) skipping dni ${curDni} because it isn't a selected device")
+            }
+          }
+        }
+      }
     }
   }
 }
 
 /**
- * Makes a ring api request to set a value for a device
+ * Makes a ring api request to set a value for a device using api.ring.com/clients_api
  * @param dni DNI of device to refresh
  * @param kind Kind of device ("doorbots", "chimes", etc.)
  * @param action Action to perform on device ("floodlight_light_off", etc)
+ *
+ * @note The difference between api.ring.com/devices/v1 and api.ring.com/clients_api is unclear. Ring seems
+ *       to arbitrarily switch between the two
  */
-void apiRequestDeviceSet(Map arguments, final String dni, final String kind) {
-  logTrace("apiRequestDeviceSet(${dni}, ${kind}, ${arguments})")
+void apiRequestClientsApiSet(Map arguments, final String dni, final String kind) {
+  logTrace("apiRequestClientsApiSet(${dni}, ${kind}, ${arguments})")
 
   String action = arguments.action
 
@@ -1146,16 +1191,16 @@ void apiRequestDeviceSet(Map arguments, final String dni, final String kind) {
 
   String httpFunction = arguments.getOrDefault('method', 'Put')
 
-  apiRequestAsyncCommon("apiRequestDeviceSet", httpFunction, params, false) { resp ->
+  apiRequestAsyncCommon("apiRequestClientsApiSet", httpFunction, params, false) { resp ->
     Map body = resp.getData() ? resp.getJson() : null
 
-    logTrace "apiRequestDeviceSet $kind ($arguments) for $dni succeeded, body: ${JsonOutput.toJson(body)}"
+    logTrace "apiRequestClientsApiSet $kind ($arguments) for $dni succeeded, body: ${JsonOutput.toJson(body)}"
 
     ChildDeviceWrapper d = getChildDevice(dni)
     if (d) {
-      d.handleDeviceSet(body, arguments)
+      d.handleClientsApiSet(body, arguments)
     } else {
-      log.error "apiRequestDeviceSet $kind ($arguments) cannot get child device with dni $dni"
+      log.error "apiRequestClientsApiSet $kind ($arguments) cannot get child device with dni $dni"
     }
   }
 }
@@ -1165,22 +1210,57 @@ void apiRequestDeviceSet(Map arguments, final String dni, final String kind) {
  * @param dni DNI of device to refresh
  * @param kind Kind of device ("doorbots", "chimes", etc.)
  */
-void apiRequestDeviceHealth(final String dni, final String kind) {
-  logTrace("apiRequestDeviceHealth(${dni}, ${kind})")
+void apiRequestClientsApiHealth(final String dni, final String kind) {
+  logTrace("apiRequestClientsApiHealth(${dni}, ${kind})")
 
   Map params = makeClientsApiParams('/' + kind + '/' + getRingDeviceId(dni) + '/health',
                                     [contentType: TEXT, requestContentType: JSON])
 
-  apiRequestAsyncCommon("apiRequestDeviceHealth", "Get", params, false) { resp ->
+  apiRequestAsyncCommon("apiRequestClientsApiHealth", "Get", params, false) { resp ->
     Map body = resp.getData() ? resp.getJson() : null
 
-    logTrace "apiRequestDeviceHealth ${kind} for ${dni} succeeded, body: ${JsonOutput.toJson(body)}"
+    logTrace "apiRequestClientsApiHealth ${kind} for ${dni} succeeded, body: ${JsonOutput.toJson(body)}"
 
     ChildDeviceWrapper d = getChildDevice(dni)
     if (d) {
-      d.handleHealth(body)
+      d.handleClientsApiHealth(body)
     } else {
-      log.error "apiRequestDeviceHealth ${kind} cannot get child device with dni ${dni}"
+      log.error "apiRequestClientsApiHealth ${kind} cannot get child device with dni ${dni}"
+    }
+  }
+}
+
+/**
+ * Makes a ring api request to set a value for a device using api.ring.com/devices/v1
+ *
+ * @param dni DNI of device to refresh
+ * @param kind Kind of device ("doorbots", "chimes", etc.)
+ * @param action Action to perform on device ("floodlight_light_off", etc)
+ *
+ * @note The difference between api.ring.com/devices/v1 and api.ring.com/clients_api is unclear. Ring seems
+ *       to arbitrarily switch between the two
+ */
+void apiRequestDevicesApiSet(Map arguments, final String dni, final String kind) {
+  logTrace("apiRequestDevicesApiSet(${dni}, ${kind}, ${arguments})")
+
+  String action = arguments.action
+
+  Map params = makeDevicesApiParams('/' + kind + '/' + getRingDeviceId(dni) + (action ? "/${action}" : ""),
+                                    [contentType: TEXT, requestContentType: JSON, body: arguments.getOrDefault('body', ""),
+                                     query: arguments.query])
+
+  String httpFunction = arguments.getOrDefault('method', 'Patch')
+
+  apiRequestAsyncCommon("apiRequestDevicesApiSet", httpFunction, params, false) { resp ->
+    Map body = resp.getData() ? resp.getJson() : null
+
+    logTrace "apiRequestDevicesApiSet $kind ($arguments) for $dni succeeded, body: ${JsonOutput.toJson(body)}"
+
+    ChildDeviceWrapper d = getChildDevice(dni)
+    if (d) {
+      d.handleDevicesApiSet(body, arguments)
+    } else {
+      log.error "apiRequestDevicesApiSet $kind ($arguments) cannot get child device with dni $dni"
     }
   }
 }
@@ -1188,7 +1268,7 @@ void apiRequestDeviceHealth(final String dni, final String kind) {
 /**
  * Makes a ring api request for dings data
  *
- * @todo The returned object has a detection_type. There's also a settings.cv.settings.detection_types in the apiRequestDevices response
+ * @todo The returned object has a detection_type. There's also a settings.cv.settings.detection_types in the apiRequestClientsApiRefreshSync response
  */
 void apiRequestDings() {
   logTrace("apiRequestDings()")
@@ -1656,6 +1736,19 @@ Map makeAppApiParams(final String urlSuffix, final Map args, final Map headerArg
 Map makeClientsApiParams(final String urlSuffix, final Map args, final Map headerArgs = [:]) {
   Map params = [
     uri: CLIENTS_API_BASE_URL + urlSuffix,
+    contentType: args.getOrDefault('contentType', JSON),
+  ]
+
+  params << args.subMap(['body', 'requestContentType', 'query'])
+
+  addHeadersToHttpRequest(params, headerArgs)
+
+  return params
+}
+
+Map makeDevicesApiParams(final String urlSuffix, final Map args, final Map headerArgs = [:]) {
+  Map params = [
+    uri: DEVICES_API_BASE_URL + urlSuffix,
     contentType: args.getOrDefault('contentType', JSON),
   ]
 
